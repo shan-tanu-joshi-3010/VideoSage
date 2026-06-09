@@ -9,8 +9,17 @@
 
 #include "io.h"
 #include "ffmpeg.h"
+#include "kafka/KafkaProducer.h"   
 
 namespace fs = std::filesystem;
+
+#ifdef _WIN32
+    #define POPEN _popen
+    #define PCLOSE _pclose
+#else
+    #define POPEN popen
+    #define PCLOSE pclose
+#endif
 
 /* ======================= GLOBALS ======================= */
 
@@ -55,11 +64,23 @@ std::string win_cmd_path(const fs::path& p)
 std::string whisper_transcribe(const fs::path& audio)
 {
     // Absolute paths (Windows-style)
-    std::string whisperExe =
-        "D:\\qt_projects\\videoplayer_server\\whisper\\whisper-cli.exe";
+   #ifdef _WIN32
 
-    std::string modelPath =
-        "D:\\qt_projects\\videoplayer_server\\whisper\\ggml-small.bin";
+std::string whisperExe =
+    "D:/qt_projects/videoplayer_server/whisper/whisper-cli.exe";
+
+std::string modelPath =
+    "D:/qt_projects/videoplayer_server/whisper/ggml-small.bin";
+
+#else
+
+std::string whisperExe =
+    "/workspaces/VideoSage/whisper.cpp/build/bin/whisper-cli";
+
+std::string modelPath =
+    "/workspaces/VideoSage/whisper.cpp/models/for-tests-ggml-small.bin";
+
+#endif
 
     // IMPORTANT: use native Windows path
     std::string audioPath = audio.string();
@@ -72,21 +93,25 @@ std::string whisper_transcribe(const fs::path& audio)
                       " --no-timestamps";
 
     // 🔥 CRITICAL FIX: wrap with cmd /C ""
+    #ifdef _WIN32
     std::string cmd = "cmd /C \"" + innerCmd + "\"";
+#else
+    std::string cmd = innerCmd;
+#endif
 
     std::cout << "[WHISPER CMD] " << cmd << std::endl;
 
     std::array<char, 4096> buffer;
     std::string result;
 
-    FILE* pipe = _popen(cmd.c_str(), "r");
+    FILE* pipe = POPEN(cmd.c_str(), "r");
     if (!pipe)
         throw std::runtime_error("whisper failed to start");
 
     while (fgets(buffer.data(), buffer.size(), pipe))
         result += buffer.data();
 
-    _pclose(pipe);
+    PCLOSE(pipe);
 
     if (result.empty())
         throw std::runtime_error("empty transcript");
@@ -115,14 +140,14 @@ std::string call_colab(const crow::json::wvalue& payload) {
     std::array<char, 4096> buffer;
     std::string response;
 
-    FILE* pipe = _popen(cmd.c_str(), "r");
+    FILE* pipe = POPEN(cmd.c_str(), "r");
     if (!pipe)
         throw std::runtime_error("colab call failed");
 
     while (fgets(buffer.data(), buffer.size(), pipe))
         response += buffer.data();
 
-    _pclose(pipe);
+    PCLOSE(pipe);
     fs::remove(tmp);
 
     return response;
@@ -138,9 +163,16 @@ std::string extract_summary_from_colab(const std::string& response)
     return json["summary"].s();
 }
 
+std::unique_ptr<KafkaProducer> kafkaProducer;
+
 /* ======================= MAIN ======================= */
 
 int main(int argc, char* argv[]) {
+
+    kafkaProducer =
+    std::make_unique<KafkaProducer>(
+        "localhost:9092",
+        "video-jobs");
 
     fs::path exeDir = fs::absolute(fs::path(argv[0])).parent_path();
 
@@ -226,34 +258,51 @@ int main(int argc, char* argv[]) {
 
     /* ======================= 🔥 SUMMARIZE ======================= */
 
-    CROW_ROUTE(app, "/videos/<string>/summarize").methods("POST"_method)
-        ([](std::string id) {
+    CROW_ROUTE(app, "/videos/<string>/summarize")
+    .methods("POST"_method)
+([](std::string id)
+{
+    try
+    {
+        std::cout << "[QUEUE SUMMARY] Video ID: "
+                  << id << std::endl;
 
-            try {
-                std::cout << "[SUMMARIZE] Video ID: " << id << std::endl;
+        // Verify video exists
+        fs::path video = get_video_path(id);
 
-                fs::path video = get_video_path(id);
-                fs::path audio = extract_audio(video);
+        // Publish Kafka Job
+        bool success =
+            kafkaProducer->sendJob(
+                id,
+                video.string());
 
-                std::string transcript = whisper_transcribe(audio);
-                fs::remove(audio);  // cleanup
+        if (!success)
+        {
+            return crow::response(
+                500,
+                "Failed to queue summarization job");
+        }
 
-                crow::json::wvalue semantic;
-                semantic["video_id"] = id;
-                semantic["transcript"] = transcript;
+        crow::json::wvalue out;
 
-                std::string modelResp = call_colab(semantic);
-                std::string summary = extract_summary_from_colab(modelResp);
+        out["status"] = "QUEUED";
+        out["video_id"] = id;
+        out["message"] =
+            "Summarization job submitted successfully";
 
-                crow::json::wvalue out;
-                out["summary"] = summary;
+        return crow::response(202, out);
+    }
+    catch (const std::exception& e)
+    {
+        crow::json::wvalue error;
 
-                return crow::response(200, out);
+        error["status"] = "FAILED";
+        error["error"] = e.what();
 
-            } catch (const std::exception& e) {
-                return crow::response(500, e.what());
-            }
-        });
+        return crow::response(500, error);
+    }
+});
+
     CROW_ROUTE(app, "/thumb/<string>")
     ([](std::string filename) {
 
