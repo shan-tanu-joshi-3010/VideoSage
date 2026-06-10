@@ -320,6 +320,67 @@ int main(int argc, char* argv[]) {
         return res;
     });
 
+    /* ======================= UPLOAD ======================= */
+
+    CROW_ROUTE(app, "/upload/<string>")
+    .methods("PUT"_method)
+    ([](const crow::request& req, std::string id) {
+
+        try {
+
+            std::string ext = req.url_params.get("ext")
+                                ? req.url_params.get("ext")
+                                : ".mp4";
+
+            std::string title = req.url_params.get("title")
+                                ? req.url_params.get("title")
+                                : id;
+
+            if (req.body.empty()) {
+                return crow::response(400, "Empty upload");
+            }
+
+            // Save original video
+            fs::path originalPath = P_ORIG / (id + ext);
+
+            {
+                std::ofstream ofs(originalPath, std::ios::binary);
+
+                if (!ofs) {
+                    return crow::response(500,
+                                        "Failed to create file");
+                }
+
+                ofs.write(req.body.data(), req.body.size());
+            }
+
+            std::cout << "[UPLOAD] Saved video: "
+                    << originalPath << std::endl;
+
+            // For now just copy to encoded folder
+            fs::path encodedPath = P_ENC / (id + ".mp4");
+
+            fs::copy_file(originalPath,
+                        encodedPath,
+                        fs::copy_options::overwrite_existing);
+
+            std::cout << "[UPLOAD] Encoded video: "
+                    << encodedPath << std::endl;
+
+            crow::json::wvalue out;
+
+            out["status"] = "success";
+            out["video_id"] = id;
+            out["title"] = title;
+
+            return crow::response(200, out);
+        }
+        catch (const std::exception& e) {
+
+            return crow::response(500, e.what());
+        }
+    });
+
 
     app.port(18080).multithreaded().run();
 }
