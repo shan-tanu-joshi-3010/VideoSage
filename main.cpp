@@ -328,59 +328,102 @@ int main(int argc, char* argv[]) {
 
         try {
 
+            std::cout << "[UPLOAD] Request received for "
+                    << id << std::endl;
+
             std::string ext = req.url_params.get("ext")
                                 ? req.url_params.get("ext")
                                 : ".mp4";
 
             std::string title = req.url_params.get("title")
-                                ? req.url_params.get("title")
-                                : id;
+                                    ? req.url_params.get("title")
+                                    : id;
 
             if (req.body.empty()) {
                 return crow::response(400, "Empty upload");
             }
 
-            // Save original video
+            /* Save original video */
+
             fs::path originalPath = P_ORIG / (id + ext);
 
             {
-                std::ofstream ofs(originalPath, std::ios::binary);
+                std::ofstream ofs(originalPath,
+                                std::ios::binary);
 
                 if (!ofs) {
-                    return crow::response(500,
-                                        "Failed to create file");
+                    return crow::response(
+                        500,
+                        "Failed to create file");
                 }
 
-                ofs.write(req.body.data(), req.body.size());
+                ofs.write(req.body.data(),
+                        req.body.size());
             }
 
             std::cout << "[UPLOAD] Saved video: "
-                    << originalPath << std::endl;
+                    << originalPath
+                    << std::endl;
 
-            // For now just copy to encoded folder
-            fs::path encodedPath = P_ENC / (id + ".mp4");
+            /* Copy to encoded folder */
 
-            fs::copy_file(originalPath,
-                        encodedPath,
-                        fs::copy_options::overwrite_existing);
+            fs::path encodedPath =
+                P_ENC / (id + ".mp4");
+
+            fs::copy_file(
+                originalPath,
+                encodedPath,
+                fs::copy_options::overwrite_existing);
 
             std::cout << "[UPLOAD] Encoded video: "
-                    << encodedPath << std::endl;
+                    << encodedPath
+                    << std::endl;
+
+            /* Queue Kafka Job */
+
+            std::cout << "[UPLOAD] Sending Kafka job..."
+                    << std::endl;
+
+            bool success =
+                kafkaProducer->sendJob(
+                    id,
+                    encodedPath.string());
+
+            std::cout << "[UPLOAD] Kafka result: "
+                    << success
+                    << std::endl;
+
+            if (!success) {
+                return crow::response(
+                    500,
+                    "Failed to queue summarization job");
+            }
+
+            std::cout << "[KAFKA] Queued video "
+                    << id
+                    << std::endl;
 
             crow::json::wvalue out;
 
-            out["status"] = "success";
+            out["status"] = "QUEUED";
             out["video_id"] = id;
             out["title"] = title;
+            out["message"] =
+                "Video uploaded and summarization queued";
 
-            return crow::response(200, out);
+            return crow::response(202, out);
         }
         catch (const std::exception& e) {
 
-            return crow::response(500, e.what());
+            std::cerr << "[UPLOAD ERROR] "
+                    << e.what()
+                    << std::endl;
+
+            return crow::response(
+                500,
+                e.what());
         }
     });
-
 
     app.port(18080).multithreaded().run();
 }
