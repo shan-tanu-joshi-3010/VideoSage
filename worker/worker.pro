@@ -8,11 +8,13 @@ TARGET = worker
 SOURCES += \
     worker.cpp \
     ../ffmpeg.cpp \
-    ../io.cpp
+    ../io.cpp \
+    processing/processing.cpp
 
 HEADERS += \
     ../ffmpeg.h \
-    ../io.h
+    ../io.h \
+    processing/processing.h
 
 INCLUDEPATH += \
     .. \
