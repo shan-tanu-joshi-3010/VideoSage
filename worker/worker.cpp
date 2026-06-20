@@ -33,7 +33,7 @@ void processVideo(const std::string& videoId,
         std::cout << "[WHISPER] Transcription completed\n";
 
         std::cout << "\n===== TRANSCRIPT =====\n";
-        std::cout << transcript << std::endl;
+        std::cout << transcript.substr(0, 1000);
         std::cout << "======================\n";
 
         /* Summarize */
@@ -177,6 +177,31 @@ int main()
 
                 std::string videoPath =
                     json["video_path"].s();
+
+                std::cout << "Original Path : "
+                        << videoPath
+                        << std::endl;
+
+                /* Convert Windows path to Codespaces path */
+                if (videoPath.find("D:/") == 0)
+                {
+                    videoPath =
+                        "/workspaces/VideoSage/" +
+                        videoPath;
+                }
+
+                std::cout << "Resolved Path: "
+                        << videoPath
+                        << std::endl;
+
+                /* Verify video exists */
+                if (!fs::exists(videoPath))
+                {
+                    std::cerr << "[ERROR] Video not found: "
+                            << videoPath
+                            << std::endl;
+                    break;
+                }
 
                 processVideo(
                     videoId,

@@ -76,9 +76,9 @@ std::string modelPath =
 
 std::string whisperExe =
     "/workspaces/VideoSage/whisper.cpp/build/bin/whisper-cli";
-
+    
 std::string modelPath =
-    "/workspaces/VideoSage/whisper.cpp/models/for-tests-ggml-small.bin";
+    "/workspaces/VideoSage/whisper.cpp/models/ggml-small.bin";
 
 #endif
 

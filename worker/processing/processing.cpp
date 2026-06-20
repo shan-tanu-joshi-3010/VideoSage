@@ -26,11 +26,11 @@ fs::path extract_audio(const fs::path& video)
         (video.stem().string() + ".wav");
 
     std::string cmd =
-        "ffmpeg -y -i \"" +
-        video.string() +
-        "\" -ar 16000 -ac 1 \"" +
-        audio.string() +
-        "\"";
+    "ffmpeg -y -i \"file:" +
+    video.string() +
+    "\" -ar 16000 -ac 1 \"" +
+    audio.string() +
+    "\"";
 
     std::cout
         << "[FFMPEG CMD] "
@@ -68,10 +68,7 @@ std::string whisper_transcribe(
         "whisper.cpp/build/bin/whisper-cli";
 
     std::string modelPath =
-        "/workspaces/VideoSage/"
-        "whisper.cpp/models/"
-        "for-tests-ggml-small.bin";
-
+    "/workspaces/VideoSage/whisper.cpp/models/ggml-small.bin";
 #endif
 
     std::string audioPath =
@@ -108,10 +105,7 @@ std::string whisper_transcribe(
             "whisper failed to start");
     }
 
-    while (
-        fgets(buffer.data(),
-              buffer.size(),
-              pipe))
+    while (fgets(buffer.data(), buffer.size(), pipe))
     {
         result += buffer.data();
     }
@@ -126,7 +120,6 @@ std::string whisper_transcribe(
 
     return result;
 }
-
 /* ======================= COLAB CALL ======================= */
 
 std::string call_colab(
